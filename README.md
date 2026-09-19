@@ -21,18 +21,25 @@
 
 ## 다음 데이터 연결 단계
 
-1. 공공데이터의 인허가 CSV를 서비스용 데이터베이스로 정제·갱신합니다.
-2. `KAKAO_REST_API_KEY`로 국내 반경/키워드 검색을 연결합니다.
-3. 해외는 요청량에 맞는 OSM 제공자 또는 자체 호스팅 지오코딩을 연결합니다. 공용 Nominatim은 자동완성에 사용하지 않습니다.
-4. 필요할 때만 Google Places·YouTube 조회를 붙이며, 해당 응답은 제공자 정책에 맞게 표시합니다.
+1. **한국관광공사 TourAPI:** `.env.example`을 `.env.local`로 복사해 공공데이터포털의 `KTO_SERVICE_KEY`를 넣고 `node scripts/private-data-server.mjs`를 실행합니다. 현재 위치 검색 시 관광공사 음식점과 OSM 결과가 함께 표시됩니다. 키는 브라우저나 Git에 노출되지 않습니다.
+2. **전국 일반음식점 인허가:** 공공데이터포털의 `전국일반음식점표준데이터` CSV를 개인 PC의 `private-data/food-permits.csv`에 저장한 뒤 아래 명령으로 영업·정상 업소만 정제합니다.
+
+   ```powershell
+   node scripts/build-korea-permit-index.mjs private-data/food-permits.csv private-data/korea-permits.json
+   ```
+
+   원본과 정제본은 Git에서 제외됩니다. 이 인덱스는 인허가 상태 검증용이며, 실시간 카카오 로컬·관광공사 결과와 이름·주소를 비교해 신뢰도를 보강하는 다음 단계에 사용합니다.
+3. `KAKAO_REST_API_KEY`로 국내 반경/키워드 검색을 연결합니다.
+4. 해외는 요청량에 맞는 OSM 제공자 또는 자체 호스팅 지오코딩을 연결합니다. 공용 Nominatim은 자동완성에 사용하지 않습니다.
+5. 필요할 때만 Google Places·YouTube 조회를 붙이며, 해당 응답은 제공자 정책에 맞게 표시합니다.
 
 ## 로컬 실행
 
 ```powershell
-py -m http.server 4173 --directory dist
+node scripts/private-data-server.mjs
 ```
 
-브라우저에서 `http://localhost:4173`을 엽니다. 이 1차 버전은 외부 라이브러리 없이 동작하는 정적 앱이므로, 개인 PC 또는 GitHub Pages 같은 정적 호스팅에 올릴 수 있습니다.
+브라우저에서 `http://127.0.0.1:4173`을 엽니다. API 키 없이도 기본 탐색과 OSM 검색은 사용할 수 있으며, 한국관광공사 보강은 `KTO_SERVICE_KEY`가 있을 때만 로컬 서버에서 작동합니다.
 
 ## 버전 관리
 
