@@ -36,5 +36,30 @@
   async function submitPlace(payload) { return request('/place-submissions', { method: 'POST', body: JSON.stringify(payload) }); }
   async function signOut() { if (configured()) await authResult(client => client.signOut()); }
   async function searchKto(latitude, longitude) { return apiConfigured() ? (await publicRequest(`/kto-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)).places || [] : []; }
-  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, searchKto, signOut };
+  const daeguDistricts = [
+    ['중구', 35.8694, 128.6062], ['동구', 35.8867, 128.6356], ['서구', 35.8718, 128.5592],
+    ['남구', 35.8460, 128.5977], ['북구', 35.8859, 128.5828], ['수성구', 35.8582, 128.6307],
+    ['달서구', 35.8299, 128.5327], ['달성군', 35.7747, 128.4313], ['군위군', 36.2429, 128.5729],
+  ];
+  function daeguDistrict(latitude, longitude) {
+    if (latitude < 35.60 || latitude > 36.35 || longitude < 128.30 || longitude > 128.85) return null;
+    return daeguDistricts.reduce((nearest, district) => {
+      const distance = Math.hypot((district[1] - latitude) * 111, (district[2] - longitude) * 90);
+      return distance < nearest.distance ? { name: district[0], distance } : nearest;
+    }, { name: '중구', distance: Number.POSITIVE_INFINITY }).name;
+  }
+  async function staticDaegu(latitude, longitude) {
+    const district = daeguDistrict(latitude, longitude);
+    if (!district) return null;
+    const response = await fetch(new URL('data/daegu-restaurants.json', document.baseURI), { cache: 'no-cache' });
+    if (!response.ok) throw new Error('대구시 공식 데이터 스냅샷을 읽지 못했습니다.');
+    const snapshot = await response.json();
+    const places = Array.isArray(snapshot.districts?.[district]) ? snapshot.districts[district].slice(0, 30) : [];
+    return { places, providers: ['대구광역시 대구푸드'], region: `대구광역시 ${district}`, fetchedAt: snapshot.fetchedAt };
+  }
+  async function searchRegional(latitude, longitude) {
+    try { const snapshot = await staticDaegu(latitude, longitude); if (snapshot) return snapshot; } catch {}
+    try { return apiConfigured() ? await publicRequest(`/regional-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`) : { places: [], providers: [] }; } catch { return { places: [], providers: [] }; }
+  }
+  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, searchKto, searchRegional, signOut };
 })();

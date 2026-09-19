@@ -72,11 +72,37 @@ function tourismPlaces(items: unknown) {
     match: "관광공사 등록",
     trust: 82 + (item.tel ? 4 : 0) + (item.firstimage || item.firstimage2 ? 4 : 0),
     source: "한국관광공사 TourAPI · 실시간 조회",
+    sources: ["한국관광공사 TourAPI"],
     verified: item.modifiedtime ? `${String(item.modifiedtime).slice(0, 8)} 기준` : "방금 확인",
     desc: item.tel ? `전화 ${item.tel}` : "한국관광공사 관광 음식점 정보입니다.",
     tags: ["관광공사 등록", item.tel ? "전화 정보" : "상세 확인 필요"],
     url: null,
+    phone: item.tel ? String(item.tel).trim() : null,
+    latitude: Number.isFinite(Number(item.mapy)) ? Number(item.mapy) : null,
+    longitude: Number.isFinite(Number(item.mapx)) ? Number(item.mapx) : null,
   })).filter((item) => item.name.length > 0);
+}
+
+const daeguDistricts = [
+  { name: "중구", latitude: 35.8694, longitude: 128.6062 },
+  { name: "동구", latitude: 35.8867, longitude: 128.6356 },
+  { name: "서구", latitude: 35.8718, longitude: 128.5592 },
+  { name: "남구", latitude: 35.8460, longitude: 128.5977 },
+  { name: "북구", latitude: 35.8859, longitude: 128.5828 },
+  { name: "수성구", latitude: 35.8582, longitude: 128.6307 },
+  { name: "달서구", latitude: 35.8299, longitude: 128.5327 },
+  { name: "달성군", latitude: 35.7747, longitude: 128.4313 },
+  { name: "군위군", latitude: 36.2429, longitude: 128.5729 },
+];
+
+function isInDaegu(latitude: number, longitude: number) {
+  return latitude >= 35.60 && latitude <= 36.35 && longitude >= 128.30 && longitude <= 128.85;
+}
+function nearestDaeguDistrict(latitude: number, longitude: number) {
+  return daeguDistricts.reduce((nearest, district) => {
+    const distance = Math.hypot((district.latitude - latitude) * 111, (district.longitude - longitude) * 90);
+    return distance < nearest.distance ? { name: district.name, distance } : nearest;
+  }, { name: "중구", distance: Number.POSITIVE_INFINITY }).name;
 }
 async function nearbyTourism(request: Request) {
   if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 검색해 주세요." }, 429);
@@ -111,12 +137,33 @@ async function nearbyTourism(request: Request) {
   }
 }
 
+async function nearbyRegional(request: Request) {
+  if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 검색해 주세요." }, 429);
+  const url = new URL(request.url);
+  const latitude = Number(url.searchParams.get("lat"));
+  const longitude = Number(url.searchParams.get("lon"));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return json(request, { error: "유효한 위치 정보가 필요합니다." }, 400);
+  if (!isInDaegu(latitude, longitude)) return json(request, { places: [], providers: [] });
+  const district = nearestDaeguDistrict(latitude, longitude);
+  const snapshotUrl = "https://raw.githubusercontent.com/Paulforjesus-debug/My-AI-Soul-food-search/main/dist/data/daegu-restaurants.json";
+  try {
+    const upstream = await fetch(snapshotUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
+    if (!upstream.ok) return json(request, { error: "지역 맛집 데이터가 일시적으로 응답하지 않습니다." }, 502);
+    const snapshot = await upstream.json() as any;
+    const places = Array.isArray(snapshot?.districts?.[district]) ? snapshot.districts[district].slice(0, 30) : [];
+    return json(request, { places, providers: ["대구광역시 대구푸드"], region: `대구광역시 ${district}`, fetchedAt: snapshot.fetchedAt || null });
+  } catch {
+    return json(request, { error: "지역 맛집 검색에 일시적으로 연결할 수 없습니다." }, 502);
+  }
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
     const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
     if (request.method === "GET" && (path === "/" || path === "/health")) return json(request, { ok: true, service: "mise-api" });
     if (request.method === "GET" && path === "/kto-nearby") return nearbyTourism(request);
+    if (request.method === "GET" && path === "/regional-nearby") return nearbyRegional(request);
     const user = await identity(request);
     if (!user) return json(request, { error: "로그인이 필요하거나 로그인 상태가 만료되었습니다." }, 401);
     if (request.method === "GET" && path === "/session") return json(request, { session: { user } });

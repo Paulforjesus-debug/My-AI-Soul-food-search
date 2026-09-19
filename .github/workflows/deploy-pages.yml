@@ -5,7 +5,10 @@ on:
     branches: [main]
     paths:
       - "dist/**"
+      - "scripts/sync-daegu-data.mjs"
       - ".github/workflows/deploy-pages.yml"
+  schedule:
+    - cron: "17 18 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Refresh Daegu official restaurant data
+        run: node scripts/sync-daegu-data.mjs
       - uses: actions/configure-pages@v5
         with:
           enablement: true
