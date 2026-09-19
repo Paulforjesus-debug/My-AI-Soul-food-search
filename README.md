@@ -16,9 +16,9 @@
 ## 모바일·개인 등록 환경
 
 - `dist/manifest.webmanifest`와 `dist/sw.js`를 포함해 휴대폰 브라우저에서 **홈 화면에 설치**할 수 있는 PWA로 구성했습니다. 오프라인에서는 화면 껍데기와 기존 기기 내 즐겨찾기만 보존되며, 실시간 위치·맛집 검색은 인터넷 연결이 필요합니다.
-- `맛집 등록`은 이메일 매직 링크 로그인 후 동작합니다. 등록은 기본적으로 `pending`(검토 대기) 상태이며, 등록자 본인만 읽거나 수정할 수 있습니다.
+- `맛집 등록`은 Neon Auth 이메일·비밀번호 로그인 후 동작합니다. 등록은 기본적으로 `pending`(검토 대기) 상태이며, API가 로그인 토큰을 확인해 등록자 본인 데이터만 읽도록 제한합니다.
 - Neon Postgres와 Neon Auth를 사용합니다. 브라우저에는 HTTPS API 주소만 설정하고, `DATABASE_URL`, `KTO_SERVICE_KEY` 등 비밀값은 절대 넣지 않습니다.
-- [neon/schema.sql](neon/schema.sql)은 맛집 등록 테이블을 만들며, 서버 API는 로그인 사용자를 검증한 뒤에만 등록을 허용합니다.
+- [migrations/0001_create_place_submissions.sql](migrations/0001_create_place_submissions.sql)이 맛집 등록 테이블의 버전 관리된 원본입니다. 서버 API는 로그인 사용자를 검증한 뒤에만 등록을 허용합니다.
 
 ## 개인정보와 키 관리
 
@@ -51,13 +51,12 @@ node scripts/private-data-server.mjs
 
 ## 언제 어디서나 쓰기 위한 배포 순서
 
-1. 전용 Neon 프로젝트에서 `neon/schema.sql`을 실행하고 Neon Auth를 설정합니다.
-2. 실제 HTTPS 주소를 Neon Auth의 Trusted Domain으로 등록합니다.
-3. `DATABASE_URL`, `KTO_SERVICE_KEY`를 서버 비밀값으로 설정하고 등록·관광공사 API를 배포합니다.
-4. `dist/app-config.js`에 HTTPS API 주소만 입력한 뒤, GitHub 연결 서버리스 호스트에 배포합니다.
-5. 휴대폰에서 해당 주소를 열어 “홈 화면에 추가”를 선택합니다.
+1. Neon 운영 브랜치에 Auth, 보호된 `miseapi` Function, 등록 테이블 마이그레이션을 배포했습니다.
+2. `https://paulforjesus-debug.github.io`를 Neon Auth Trusted Domain으로 등록했습니다.
+3. GitHub Actions가 `main` 브랜치의 `dist` 폴더를 GitHub Pages로 배포하도록 구성했습니다. 최초 배포가 완료되면 `https://paulforjesus-debug.github.io/My-AI-Soul-food-search/`에서 열 수 있습니다.
+4. 휴대폰에서 해당 주소를 열어 “홈 화면에 추가”를 선택합니다.
 
-정적 호스팅 주소는 아직 연결하지 않았습니다. 현재 작업 환경에서 Sites 배포 기능이 활성화되어 있지 않아, GitHub 원격 저장소 또는 사용 중인 호스팅 계정 연결이 필요합니다.
+`KTO_SERVICE_KEY`는 아직 연결하지 않았습니다. 공공데이터포털에서 발급받은 키를 Neon Function의 서버 비밀값으로 추가하면 한국관광공사 결과를 보강할 수 있습니다.
 
 ## 버전 관리
 
