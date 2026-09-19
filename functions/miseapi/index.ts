@@ -1,6 +1,7 @@
 import { attachDatabasePool } from "@neon/functions";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { Pool } from "pg";
+import daeguSnapshot from "../../dist/data/daegu-restaurants.json" with { type: "json" };
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
 attachDatabasePool(pool);
@@ -145,13 +146,9 @@ async function nearbyRegional(request: Request) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return json(request, { error: "유효한 위치 정보가 필요합니다." }, 400);
   if (!isInDaegu(latitude, longitude)) return json(request, { places: [], providers: [] });
   const district = nearestDaeguDistrict(latitude, longitude);
-  const snapshotUrl = "https://raw.githubusercontent.com/Paulforjesus-debug/My-AI-Soul-food-search/main/dist/data/daegu-restaurants.json";
   try {
-    const upstream = await fetch(snapshotUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
-    if (!upstream.ok) return json(request, { error: "지역 맛집 데이터가 일시적으로 응답하지 않습니다." }, 502);
-    const snapshot = await upstream.json() as any;
-    const places = Array.isArray(snapshot?.districts?.[district]) ? snapshot.districts[district].slice(0, 30) : [];
-    return json(request, { places, providers: ["대구광역시 대구푸드"], region: `대구광역시 ${district}`, fetchedAt: snapshot.fetchedAt || null });
+    const places = Array.isArray(daeguSnapshot.districts?.[district as keyof typeof daeguSnapshot.districts]) ? daeguSnapshot.districts[district as keyof typeof daeguSnapshot.districts].slice(0, 30) : [];
+    return json(request, { places, providers: ["대구광역시 대구푸드"], region: `대구광역시 ${district}`, fetchedAt: daeguSnapshot.fetchedAt || null });
   } catch {
     return json(request, { error: "지역 맛집 검색에 일시적으로 연결할 수 없습니다." }, 502);
   }
