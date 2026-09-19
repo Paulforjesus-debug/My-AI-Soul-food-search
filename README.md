@@ -17,15 +17,15 @@
 
 - `dist/manifest.webmanifest`와 `dist/sw.js`를 포함해 휴대폰 브라우저에서 **홈 화면에 설치**할 수 있는 PWA로 구성했습니다. 오프라인에서는 화면 껍데기와 기존 기기 내 즐겨찾기만 보존되며, 실시간 위치·맛집 검색은 인터넷 연결이 필요합니다.
 - `맛집 등록`은 이메일 매직 링크 로그인 후 동작합니다. 등록은 기본적으로 `pending`(검토 대기) 상태이며, 등록자 본인만 읽거나 수정할 수 있습니다.
-- `supabase/schema.sql`에는 RLS 정책을 포함했습니다. 브라우저에는 공개 가능한 Supabase publishable key만 설정하고, `service_role`, `KTO_SERVICE_KEY` 등 비밀 키는 절대 넣지 않습니다.
-- `supabase/functions/kto-nearby/`는 관광공사 키를 서버 함수의 비밀값으로 보관하는 모바일용 경로입니다. 배포 도메인(`WEB_ORIGIN`)과 로그인 사용자를 검사한 뒤에만 호출합니다.
+- Neon Postgres와 Neon Auth를 사용합니다. 브라우저에는 HTTPS API 주소만 설정하고, `DATABASE_URL`, `KTO_SERVICE_KEY` 등 비밀값은 절대 넣지 않습니다.
+- [neon/schema.sql](neon/schema.sql)은 맛집 등록 테이블을 만들며, 서버 API는 로그인 사용자를 검증한 뒤에만 등록을 허용합니다.
 
 ## 개인정보와 키 관리
 
 - 즐겨찾기는 현재 브라우저의 `localStorage`에만 저장됩니다.
 - 위치는 사용자가 현재 위치 사용을 누르고 권한을 허용한 순간에만 읽습니다.
 - API 키는 절대 브라우저 코드나 Git에 넣지 않습니다. `.env.example`을 `.env.local`로 복사해 개인 키를 설정합니다.
-- `dist/app-config.js`에는 Supabase URL과 publishable key만 넣습니다. 비밀 키는 Supabase 환경 변수에만 설정합니다.
+- `dist/app-config.js`에는 배포된 HTTPS API 주소만 넣습니다. 비밀 키는 Neon/서버리스 호스트의 환경 변수에만 설정합니다.
 
 ## 다음 데이터 연결 단계
 
@@ -51,10 +51,10 @@ node scripts/private-data-server.mjs
 
 ## 언제 어디서나 쓰기 위한 배포 순서
 
-1. 전용 Supabase 프로젝트를 만들고 `supabase/schema.sql`을 마이그레이션으로 적용합니다.
-2. Supabase Auth의 이메일 로그인과 허용 리디렉션 URL에 실제 HTTPS 주소를 등록합니다.
-3. `KTO_SERVICE_KEY`, `WEB_ORIGIN`을 서버 비밀값으로 설정하고 `kto-nearby` 함수를 배포합니다.
-4. `dist/app-config.js`에 URL과 publishable key만 입력한 뒤, HTTPS 정적 호스팅(GitHub Pages, Cloudflare Pages 등)에 `dist`를 배포합니다.
+1. 전용 Neon 프로젝트에서 `neon/schema.sql`을 실행하고 Neon Auth를 설정합니다.
+2. 실제 HTTPS 주소를 Neon Auth의 Trusted Domain으로 등록합니다.
+3. `DATABASE_URL`, `KTO_SERVICE_KEY`를 서버 비밀값으로 설정하고 등록·관광공사 API를 배포합니다.
+4. `dist/app-config.js`에 HTTPS API 주소만 입력한 뒤, GitHub 연결 서버리스 호스트에 배포합니다.
 5. 휴대폰에서 해당 주소를 열어 “홈 화면에 추가”를 선택합니다.
 
 정적 호스팅 주소는 아직 연결하지 않았습니다. 현재 작업 환경에서 Sites 배포 기능이 활성화되어 있지 않아, GitHub 원격 저장소 또는 사용 중인 호스팅 계정 연결이 필요합니다.
