@@ -53,7 +53,7 @@ node scripts/private-data-server.mjs
 
 1. Neon 운영 브랜치에 Auth, 보호된 `miseapi` Function, 등록 테이블 마이그레이션을 배포했습니다.
 2. `https://paulforjesus-debug.github.io`를 Neon Auth Trusted Domain으로 등록했습니다.
-3. GitHub Actions가 `main` 브랜치의 `dist` 폴더를 GitHub Pages로 배포하도록 구성했습니다. 최초 배포가 완료되면 `https://paulforjesus-debug.github.io/My-AI-Soul-food-search/`에서 열 수 있습니다.
+3. GitHub Actions가 `main` 브랜치의 `dist` 폴더를 GitHub Pages로 배포하도록 구성했습니다. 저장소 소유자가 GitHub **Settings → Pages → Build and deployment → Source: GitHub Actions**를 한 번 활성화하면 `https://paulforjesus-debug.github.io/My-AI-Soul-food-search/`에서 열 수 있습니다.
 4. 휴대폰에서 해당 주소를 열어 “홈 화면에 추가”를 선택합니다.
 
 `KTO_SERVICE_KEY`는 아직 연결하지 않았습니다. 공공데이터포털에서 발급받은 키를 Neon Function의 서버 비밀값으로 추가하면 한국관광공사 결과를 보강할 수 있습니다.
