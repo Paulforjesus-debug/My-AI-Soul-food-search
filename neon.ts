@@ -6,6 +6,9 @@ export default defineConfig({
     miseapi: {
       name: "mise personal API",
       source: "functions/miseapi/index.ts",
+      env: {
+        KTO_SERVICE_KEY: process.env.KTO_SERVICE_KEY!,
+      },
     },
   },
 });

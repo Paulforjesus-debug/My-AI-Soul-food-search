@@ -12,6 +12,7 @@ const allowedOrigins = new Set([
   "https://paulforjesus-debug.github.io",
   ...(process.env.PUBLIC_APP_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean),
 ]);
+const visitorHits = new Map<string, number[]>();
 
 type PlaceInput = { name?: unknown; category?: unknown; country_code?: unknown; address?: unknown; latitude?: unknown; longitude?: unknown; website_url?: unknown; note?: unknown };
 
@@ -47,12 +48,75 @@ function validWebsite(url: string | null) {
   if (!url) return true;
   try { return ["http:", "https:"].includes(new URL(url).protocol); } catch { return false; }
 }
+function serviceKeyForQuery(value: string) {
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+function nearbySearchAllowed(request: Request) {
+  const forwarded = request.headers.get("x-forwarded-for") || request.headers.get("cf-connecting-ip") || "unknown";
+  const visitor = forwarded.split(",")[0].trim();
+  const now = Date.now();
+  const recent = (visitorHits.get(visitor) || []).filter((at) => now - at < 60_000);
+  if (recent.length >= 20) return false;
+  recent.push(now);
+  visitorHits.set(visitor, recent);
+  return true;
+}
+function tourismPlaces(items: unknown) {
+  const list = Array.isArray(items) ? items : items ? [items] : [];
+  return list.map((item: any, index) => ({
+    id: `kto-${String(item.contentid || index)}`,
+    name: String(item.title || "관광공사 등록 음식점"),
+    cuisine: "관광 음식점",
+    where: String(item.addr1 || item.addr2 || "대한민국"),
+    distance: item.dist ? `${Number(item.dist).toLocaleString("ko-KR")}m` : "주변",
+    match: "관광공사 등록",
+    trust: 82 + (item.tel ? 4 : 0) + (item.firstimage || item.firstimage2 ? 4 : 0),
+    source: "한국관광공사 TourAPI · 실시간 조회",
+    verified: item.modifiedtime ? `${String(item.modifiedtime).slice(0, 8)} 기준` : "방금 확인",
+    desc: item.tel ? `전화 ${item.tel}` : "한국관광공사 관광 음식점 정보입니다.",
+    tags: ["관광공사 등록", item.tel ? "전화 정보" : "상세 확인 필요"],
+    url: null,
+  })).filter((item) => item.name.length > 0);
+}
+async function nearbyTourism(request: Request) {
+  if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 검색해 주세요." }, 429);
+  const url = new URL(request.url);
+  const latitude = Number(url.searchParams.get("lat"));
+  const longitude = Number(url.searchParams.get("lon"));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return json(request, { error: "유효한 위치 정보가 필요합니다." }, 400);
+  if (!process.env.KTO_SERVICE_KEY) return json(request, { error: "관광공사 API가 아직 설정되지 않았습니다." }, 503);
+  const upstreamUrl = new URL("https://apis.data.go.kr/B551011/KorService2/locationBasedList2");
+  upstreamUrl.search = new URLSearchParams({
+    serviceKey: serviceKeyForQuery(process.env.KTO_SERVICE_KEY),
+    MobileOS: "ETC",
+    MobileApp: "mise",
+    _type: "json",
+    mapX: String(longitude),
+    mapY: String(latitude),
+    radius: "1600",
+    contentTypeId: "39",
+    arrange: "P",
+    numOfRows: "20",
+    pageNo: "1",
+  }).toString();
+  try {
+    const upstream = await fetch(upstreamUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
+    if (!upstream.ok) return json(request, { error: "관광공사 조회 서비스가 일시적으로 응답하지 않습니다." }, 502);
+    const payload = await upstream.json() as any;
+    const header = payload?.response?.header;
+    if (header?.resultCode && header.resultCode !== "0000") return json(request, { error: "관광공사 API 요청이 거절되었습니다.", code: header.resultCode }, 502);
+    return json(request, { places: tourismPlaces(payload?.response?.body?.items?.item) });
+  } catch {
+    return json(request, { error: "관광공사 검색에 일시적으로 연결할 수 없습니다." }, 502);
+  }
+}
 
 export default {
   async fetch(request: Request): Promise<Response> {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
     const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
     if (request.method === "GET" && (path === "/" || path === "/health")) return json(request, { ok: true, service: "mise-api" });
+    if (request.method === "GET" && path === "/kto-nearby") return nearbyTourism(request);
     const user = await identity(request);
     if (!user) return json(request, { error: "로그인이 필요하거나 로그인 상태가 만료되었습니다." }, 401);
     if (request.method === "GET" && path === "/session") return json(request, { session: { user } });
@@ -78,7 +142,6 @@ export default {
       const { rows } = await pool.query(`insert into place_submissions (owner_id, name, category, country_code, address, latitude, longitude, website_url, note) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, status, created_at`, [user.id, name, category, countryCode, address, latitude, longitude, websiteUrl, note]);
       return json(request, { submission: rows[0] }, 201);
     }
-    if (request.method === "GET" && path === "/kto-nearby") return json(request, { places: [], message: "한국관광공사 API 키를 연결하면 공식 관광 데이터를 함께 검색합니다." }, 503);
     return json(request, { error: "요청한 경로를 찾을 수 없습니다." }, 404);
   },
 };

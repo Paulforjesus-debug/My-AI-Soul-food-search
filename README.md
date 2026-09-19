@@ -29,7 +29,7 @@
 
 ## 다음 데이터 연결 단계
 
-1. **한국관광공사 TourAPI:** `.env.example`을 `.env.local`로 복사해 공공데이터포털의 `KTO_SERVICE_KEY`를 넣고 `node scripts/private-data-server.mjs`를 실행합니다. 현재 위치 검색 시 관광공사 음식점과 OSM 결과가 함께 표시됩니다. 키는 브라우저나 Git에 노출되지 않습니다.
+1. **한국관광공사 TourAPI:** 연결을 완료했습니다. 현재 위치 검색 시 관광공사 음식점과 OSM 결과가 함께 표시됩니다. 일반 인증키는 URL 인코딩된 형태 그대로 `.env.local`의 `KTO_SERVICE_KEY`에 보관하며, 서버가 요청을 만들 때 한 번만 해석합니다. 키는 브라우저나 Git에 노출되지 않습니다.
 2. **전국 일반음식점 인허가:** 공공데이터포털의 `전국일반음식점표준데이터` CSV를 개인 PC의 `private-data/food-permits.csv`에 저장한 뒤 아래 명령으로 영업·정상 업소만 정제합니다.
 
    ```powershell
@@ -56,7 +56,7 @@ node scripts/private-data-server.mjs
 3. GitHub Actions가 `main` 브랜치의 `dist` 폴더를 GitHub Pages로 배포하도록 구성했습니다. 저장소 소유자가 GitHub **Settings → Pages → Build and deployment → Source: GitHub Actions**를 한 번 활성화하면 `https://paulforjesus-debug.github.io/My-AI-Soul-food-search/`에서 열 수 있습니다.
 4. 휴대폰에서 해당 주소를 열어 “홈 화면에 추가”를 선택합니다.
 
-`KTO_SERVICE_KEY`는 아직 연결하지 않았습니다. 공공데이터포털에서 발급받은 키를 Neon Function의 서버 비밀값으로 추가하면 한국관광공사 결과를 보강할 수 있습니다.
+`KTO_SERVICE_KEY`는 Neon Function의 서버 비밀값으로 배포되어 있습니다. 인증키를 교체할 때에는 `.env.local` 값만 바꾼 뒤 `neon deploy --env .env.local`로 다시 배포합니다.
 
 ## 버전 관리
 

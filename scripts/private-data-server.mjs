@@ -19,6 +19,9 @@ function json(response, status, payload) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(payload));
 }
+function serviceKeyForQuery(value) {
+  try { return decodeURIComponent(value); } catch { return value; }
+}
 
 function normalizeTourItem(item) {
   const title = String(item.title ?? "").replace(/<[^>]*>/g, "").trim();
@@ -49,7 +52,7 @@ async function tourismRestaurants(url, response) {
 
   const endpoint = new URL("https://apis.data.go.kr/B551011/KorService2/locationBasedList2");
   endpoint.search = new URLSearchParams({
-    serviceKey: key,
+    serviceKey: serviceKeyForQuery(key),
     MobileOS: "ETC",
     MobileApp: "mise",
     _type: "json",
