@@ -14,6 +14,8 @@ const allowedOrigins = new Set([
   ...(process.env.PUBLIC_APP_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean),
 ]);
 const visitorHits = new Map<string, number[]>();
+const geocodeCache = new Map<string, { expiresAt: number; location: Record<string, unknown> }>();
+let lastGeocodeRequestAt = 0;
 
 type PlaceInput = { name?: unknown; category?: unknown; country_code?: unknown; address?: unknown; latitude?: unknown; longitude?: unknown; website_url?: unknown; note?: unknown };
 
@@ -82,6 +84,55 @@ function tourismPlaces(items: unknown) {
     latitude: Number.isFinite(Number(item.mapy)) ? Number(item.mapy) : null,
     longitude: Number.isFinite(Number(item.mapx)) ? Number(item.mapx) : null,
   })).filter((item) => item.name.length > 0);
+}
+
+function cleanLocationQuery(value: string) {
+  return value.replace(/\s*(주변|근처|맛집)\s*$/g, "").replace(/\s+/g, " ").trim();
+}
+async function geocodeLocation(request: Request) {
+  if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 검색해 주세요." }, 429);
+  const url = new URL(request.url);
+  const query = cleanLocationQuery(String(url.searchParams.get("q") || ""));
+  if (query.length < 2 || query.length > 120) return json(request, { error: "지역이나 동네를 2~120자로 입력해 주세요." }, 400);
+  const cacheKey = query.toLocaleLowerCase("ko-KR");
+  const cached = geocodeCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return json(request, { location: cached.location, cached: true });
+
+  const wait = Math.max(0, 1_050 - (Date.now() - lastGeocodeRequestAt));
+  if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastGeocodeRequestAt = Date.now();
+  const upstreamUrl = new URL("https://nominatim.openstreetmap.org/search");
+  upstreamUrl.search = new URLSearchParams({ q: query, format: "jsonv2", limit: "1", addressdetails: "1", "accept-language": "ko,en" }).toString();
+  try {
+    const upstream = await fetch(upstreamUrl, {
+      headers: {
+        Accept: "application/json",
+        "Accept-Language": "ko,en;q=0.8",
+        "User-Agent": "mise-personal-food-finder/1.0 (https://github.com/Paulforjesus-debug/My-AI-Soul-food-search)",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!upstream.ok) return json(request, { error: "지역 검색 서비스가 일시적으로 응답하지 않습니다." }, 502);
+    const results = await upstream.json() as any[];
+    const result = results[0];
+    const latitude = Number(result?.lat);
+    const longitude = Number(result?.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return json(request, { error: `“${query}” 위치를 찾지 못했습니다. 도시·구·동 이름을 조금 더 자세히 입력해 주세요.` }, 404);
+    const address = result.address || {};
+    const location = {
+      query,
+      latitude,
+      longitude,
+      name: String(result.display_name || query),
+      shortName: String(address.neighbourhood || address.suburb || address.borough || address.city_district || address.city || address.town || address.village || result.name || query),
+      countryCode: typeof address.country_code === "string" ? address.country_code.toUpperCase() : null,
+      attribution: "© OpenStreetMap contributors",
+    };
+    geocodeCache.set(cacheKey, { expiresAt: Date.now() + 24 * 60 * 60 * 1_000, location });
+    return json(request, { location, cached: false });
+  } catch {
+    return json(request, { error: "지역 검색 서비스에 일시적으로 연결할 수 없습니다." }, 502);
+  }
 }
 
 const daeguDistricts = [
@@ -159,6 +210,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
     const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
     if (request.method === "GET" && (path === "/" || path === "/health")) return json(request, { ok: true, service: "mise-api" });
+    if (request.method === "GET" && path === "/geocode") return geocodeLocation(request);
     if (request.method === "GET" && path === "/kto-nearby") return nearbyTourism(request);
     if (request.method === "GET" && path === "/regional-nearby") return nearbyRegional(request);
     const user = await identity(request);

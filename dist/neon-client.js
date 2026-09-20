@@ -36,6 +36,10 @@
   async function submitPlace(payload) { return request('/place-submissions', { method: 'POST', body: JSON.stringify(payload) }); }
   async function signOut() { if (configured()) await authResult(client => client.signOut()); }
   async function searchKto(latitude, longitude) { return apiConfigured() ? (await publicRequest(`/kto-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)).places || [] : []; }
+  async function geocode(query) {
+    if (!apiConfigured()) throw new Error('지역 검색 서버가 아직 연결되지 않았습니다.');
+    return (await publicRequest(`/geocode?q=${encodeURIComponent(query)}`)).location;
+  }
   const daeguDistricts = [
     ['중구', 35.8694, 128.6062], ['동구', 35.8867, 128.6356], ['서구', 35.8718, 128.5592],
     ['남구', 35.8460, 128.5977], ['북구', 35.8859, 128.5828], ['수성구', 35.8582, 128.6307],
@@ -61,5 +65,5 @@
     try { const snapshot = await staticDaegu(latitude, longitude); if (snapshot) return snapshot; } catch {}
     try { return apiConfigured() ? await publicRequest(`/regional-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`) : { places: [], providers: [] }; } catch { return { places: [], providers: [] }; }
   }
-  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, searchKto, searchRegional, signOut };
+  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, geocode, searchKto, searchRegional, signOut };
 })();

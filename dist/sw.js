@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mise-shell-v2';
+const CACHE_NAME = 'mise-shell-v3';
 const APP_SHELL = ['./', './favicon.svg', './mise-featured-dish.png', './manifest.webmanifest', './app-config.js', './neon-client.js'];
 
 self.addEventListener('install', (event) => {
