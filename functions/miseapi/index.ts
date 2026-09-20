@@ -17,7 +17,7 @@ const visitorHits = new Map<string, number[]>();
 const geocodeCache = new Map<string, { expiresAt: number; location: Record<string, unknown> }>();
 let lastGeocodeRequestAt = 0;
 
-type PlaceInput = { name?: unknown; category?: unknown; country_code?: unknown; address?: unknown; latitude?: unknown; longitude?: unknown; website_url?: unknown; note?: unknown };
+type PlaceInput = { name?: unknown; category?: unknown; country_code?: unknown; address?: unknown; latitude?: unknown; longitude?: unknown; website_url?: unknown; note?: unknown; broadcast_program?: unknown; broadcast_episode?: unknown; broadcast_aired_on?: unknown; broadcast_source_url?: unknown };
 
 function cors(request: Request) {
   const origin = request.headers.get("origin");
@@ -50,6 +50,11 @@ async function identity(request: Request) {
 function validWebsite(url: string | null) {
   if (!url) return true;
   try { return ["http:", "https:"].includes(new URL(url).protocol); } catch { return false; }
+}
+function validDate(value: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return !value;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 function serviceKeyForQuery(value: string) {
   try { return decodeURIComponent(value); } catch { return value; }
@@ -217,7 +222,7 @@ export default {
     if (!user) return json(request, { error: "로그인이 필요하거나 로그인 상태가 만료되었습니다." }, 401);
     if (request.method === "GET" && path === "/session") return json(request, { session: { user } });
     if (request.method === "GET" && path === "/place-submissions") {
-      const { rows } = await pool.query("select id, name, category, country_code, address, latitude, longitude, website_url, note, status, created_at from place_submissions where owner_id = $1 order by created_at desc limit 100", [user.id]);
+      const { rows } = await pool.query("select id, name, category, country_code, address, latitude, longitude, website_url, note, broadcast_program, broadcast_episode, broadcast_aired_on, broadcast_source_url, status, created_at from place_submissions where owner_id = $1 order by created_at desc limit 100", [user.id]);
       return json(request, { submissions: rows });
     }
     if (request.method === "POST" && path === "/place-submissions") {
@@ -229,13 +234,21 @@ export default {
       const address = stringValue(input.address, 500);
       const websiteUrl = stringValue(input.website_url, 500);
       const note = stringValue(input.note, 1200);
+      const broadcastProgram = stringValue(input.broadcast_program, 120);
+      const broadcastEpisode = stringValue(input.broadcast_episode, 120);
+      const broadcastAiredOn = stringValue(input.broadcast_aired_on, 10);
+      const broadcastSourceUrl = stringValue(input.broadcast_source_url, 500);
       const latitude = coordinate(input.latitude);
       const longitude = coordinate(input.longitude);
       if (!name || name.length < 2) return json(request, { error: "맛집 이름은 2~160자로 입력해 주세요." }, 400);
       if (!/^[A-Z]{2}$/.test(countryCode)) return json(request, { error: "국가 코드는 ISO 2자리 코드여야 합니다." }, 400);
       if (latitude === undefined || longitude === undefined || (latitude !== null && (latitude < -90 || latitude > 90)) || (longitude !== null && (longitude < -180 || longitude > 180))) return json(request, { error: "좌표 값을 확인해 주세요." }, 400);
       if (!validWebsite(websiteUrl)) return json(request, { error: "웹사이트는 http 또는 https 주소여야 합니다." }, 400);
-      const { rows } = await pool.query(`insert into place_submissions (owner_id, name, category, country_code, address, latitude, longitude, website_url, note) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, status, created_at`, [user.id, name, category, countryCode, address, latitude, longitude, websiteUrl, note]);
+      if ((broadcastEpisode || broadcastAiredOn || broadcastSourceUrl) && !broadcastProgram) return json(request, { error: "방송 출연 정보를 넣을 때는 프로그램명을 입력해 주세요." }, 400);
+      if (broadcastProgram && !broadcastSourceUrl) return json(request, { error: "방송 출연 정보에는 공식 방송 또는 공식 영상 링크가 필요합니다." }, 400);
+      if (!validDate(broadcastAiredOn)) return json(request, { error: "방송일은 YYYY-MM-DD 형식으로 입력해 주세요." }, 400);
+      if (!validWebsite(broadcastSourceUrl)) return json(request, { error: "공식 방송 링크는 http 또는 https 주소여야 합니다." }, 400);
+      const { rows } = await pool.query(`insert into place_submissions (owner_id, name, category, country_code, address, latitude, longitude, website_url, note, broadcast_program, broadcast_episode, broadcast_aired_on, broadcast_source_url) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, status, created_at`, [user.id, name, category, countryCode, address, latitude, longitude, websiteUrl, note, broadcastProgram, broadcastEpisode, broadcastAiredOn, broadcastSourceUrl]);
       return json(request, { submission: rows[0] }, 201);
     }
     return json(request, { error: "요청한 경로를 찾을 수 없습니다." }, 404);

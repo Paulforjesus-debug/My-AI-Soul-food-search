@@ -11,6 +11,14 @@ create table if not exists place_submissions (
   longitude double precision check (longitude between -180 and 180),
   website_url text,
   note text check (char_length(note) <= 1200),
+  broadcast_program text,
+  broadcast_episode text,
+  broadcast_aired_on date,
+  broadcast_source_url text,
+  check (
+    (broadcast_program is null and broadcast_episode is null and broadcast_aired_on is null and broadcast_source_url is null)
+    or (broadcast_program is not null and broadcast_source_url is not null)
+  ),
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   created_at timestamptz not null default now()
 );
