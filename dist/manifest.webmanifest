@@ -1,6 +1,6 @@
 {
-  "name": "mise — 개인 맛집 탐색",
-  "short_name": "mise",
+  "name": "mise AI 맛집검색",
+  "short_name": "mise AI 맛집검색",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f4f5f2",
