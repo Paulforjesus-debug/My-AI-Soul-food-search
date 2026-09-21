@@ -441,6 +441,7 @@ const miseApi = {
       const latitude = coordinate(input.latitude);
       const longitude = coordinate(input.longitude);
       if (!name || name.length < 2) return json(request, { error: "맛집 이름은 2~160자로 입력해 주세요." }, 400);
+      if (!address) return json(request, { error: "지역 검색에 반영하려면 주소를 입력해 주세요." }, 400);
       if (!/^[A-Z]{2}$/.test(countryCode)) return json(request, { error: "국가 코드는 ISO 2자리 코드여야 합니다." }, 400);
       if (latitude === undefined || longitude === undefined || (latitude !== null && (latitude < -90 || latitude > 90)) || (longitude !== null && (longitude < -180 || longitude > 180))) return json(request, { error: "좌표 값을 확인해 주세요." }, 400);
       if (!validWebsite(websiteUrl)) return json(request, { error: "웹사이트는 http 또는 https 주소여야 합니다." }, 400);
@@ -448,7 +449,7 @@ const miseApi = {
       if (broadcastProgram && !broadcastSourceUrl) return json(request, { error: "방송 출연 정보에는 공식 방송 또는 공식 영상 링크가 필요합니다." }, 400);
       if (!validDate(broadcastAiredOn)) return json(request, { error: "방송일은 YYYY-MM-DD 형식으로 입력해 주세요." }, 400);
       if (!validWebsite(broadcastSourceUrl)) return json(request, { error: "공식 방송 링크는 http 또는 https 주소여야 합니다." }, 400);
-      const { rows } = await pool.query(`insert into place_submissions (owner_id, name, category, country_code, address, latitude, longitude, website_url, note, broadcast_program, broadcast_episode, broadcast_aired_on, broadcast_source_url) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, status, created_at`, [user.id, name, category, countryCode, address, latitude, longitude, websiteUrl, note, broadcastProgram, broadcastEpisode, broadcastAiredOn, broadcastSourceUrl]);
+      const { rows } = await pool.query(`insert into place_submissions (owner_id, name, category, country_code, address, latitude, longitude, website_url, note, broadcast_program, broadcast_episode, broadcast_aired_on, broadcast_source_url, status) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'approved') returning id, status, created_at`, [user.id, name, category, countryCode, address, latitude, longitude, websiteUrl, note, broadcastProgram, broadcastEpisode, broadcastAiredOn, broadcastSourceUrl]);
       return json(request, { submission: rows[0] }, 201);
     }
     return json(request, { error: "요청한 경로를 찾을 수 없습니다." }, 404);

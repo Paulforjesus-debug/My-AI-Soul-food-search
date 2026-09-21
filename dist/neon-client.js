@@ -34,6 +34,7 @@
   async function signIn(email, password) { return authResult(client => client.signIn.email({ email, password })); }
   async function signUp(email, password) { return authResult(client => client.signUp.email({ email, password, name: email.split('@')[0] || 'mise user' })); }
   async function submitPlace(payload) { return request('/place-submissions', { method: 'POST', body: JSON.stringify(payload) }); }
+  async function listSubmissions() { return (await request('/place-submissions')).submissions || []; }
   async function signOut() { if (configured()) await authResult(client => client.signOut()); }
   async function searchKto(latitude, longitude, radius) { const radiusParam = Number.isFinite(Number(radius)) ? `&radius=${encodeURIComponent(Math.round(Number(radius)))}` : ''; return apiConfigured() ? (await publicRequest(`/kto-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}${radiusParam}`)).places || [] : []; }
   async function getKtoDetails(contentId) { return apiConfigured() ? (await publicRequest(`/kto-details?contentId=${encodeURIComponent(contentId)}`)).details || {} : {}; }
@@ -72,5 +73,5 @@
     try { const snapshot = await staticDaegu(latitude, longitude); if (snapshot) return snapshot; } catch {}
     try { return apiConfigured() ? await publicRequest(`/regional-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`) : { places: [], providers: [] }; } catch { return { places: [], providers: [] }; }
   }
-  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, geocode, searchKto, getKtoDetails, getPlaceInsights, searchRegional, signOut };
+  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, listSubmissions, geocode, searchKto, getKtoDetails, getPlaceInsights, searchRegional, signOut };
 })();

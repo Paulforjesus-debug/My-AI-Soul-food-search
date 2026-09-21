@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mise-shell-v12';
-const APP_SHELL = ['./', './favicon.svg', './mise-featured-dish.png', './manifest.webmanifest', './app-config.js', './neon-client.js?v=6'];
+const CACHE_NAME = 'mise-shell-v13';
+const APP_SHELL = ['./', './favicon.svg', './mise-featured-dish.png', './manifest.webmanifest', './app-config.js', './neon-client.js?v=7'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
