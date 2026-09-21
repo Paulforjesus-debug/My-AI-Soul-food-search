@@ -22,7 +22,7 @@ let lastGeocodeRequestAt = 0;
 type PlaceInput = { name?: unknown; category?: unknown; country_code?: unknown; address?: unknown; latitude?: unknown; longitude?: unknown; website_url?: unknown; note?: unknown; broadcast_program?: unknown; broadcast_episode?: unknown; broadcast_aired_on?: unknown; broadcast_source_url?: unknown };
 type TourismApiResponse = { response?: { header?: { resultCode?: string }; body?: { items?: { item?: unknown } } } };
 type TourismApiItem = Record<string, unknown>;
-type NominatimResult = { lat?: string; lon?: string; display_name?: string; name?: string; address?: Record<string, unknown> };
+type NominatimResult = { lat?: string; lon?: string; display_name?: string; name?: string; address?: Record<string, unknown>; boundingbox?: string[]; category?: string; type?: string; addresstype?: string };
 type GoogleReview = { rating?: number; text?: { text?: string }; relativePublishTimeDescription?: string; authorAttribution?: { displayName?: string; uri?: string }; googleMapsUri?: string };
 type GooglePlace = { id?: string; rating?: number; userRatingCount?: number; reviews?: GoogleReview[]; googleMapsLinks?: { placeUri?: string; reviewsUri?: string } };
 type GoogleTextSearchResponse = { places?: GooglePlace[] };
@@ -130,6 +130,16 @@ function tourismPlaces(items: unknown) {
 function cleanLocationQuery(value: string) {
   return value.replace(/\s*(주변|근처|맛집)\s*$/g, "").replace(/\s+/g, " ").trim();
 }
+function locationBounds(value: unknown) {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const [south, north, west, east] = value.map(Number);
+  if (![south, north, west, east].every(Number.isFinite) || south >= north || west >= east || south < -90 || north > 90 || west < -180 || east > 180) return null;
+  return { south, north, west, east };
+}
+function isAdministrativeResult(result: NominatimResult) {
+  const type = String(result.type || result.addresstype || "").toLowerCase();
+  return result.category === "boundary" || type === "administrative" || ["country", "state", "province", "region", "county", "city", "municipality", "district", "city_district", "borough", "suburb", "quarter", "neighbourhood", "village", "town", "hamlet"].includes(type);
+}
 async function geocodeLocation(request: Request) {
   if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 검색해 주세요." }, 429);
   const url = new URL(request.url);
@@ -143,7 +153,7 @@ async function geocodeLocation(request: Request) {
   if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
   lastGeocodeRequestAt = Date.now();
   const upstreamUrl = new URL("https://nominatim.openstreetmap.org/search");
-  upstreamUrl.search = new URLSearchParams({ q: query, format: "jsonv2", limit: "1", addressdetails: "1", "accept-language": "ko,en" }).toString();
+  upstreamUrl.search = new URLSearchParams({ q: query, format: "jsonv2", limit: "10", addressdetails: "1", "accept-language": "ko,en" }).toString();
   try {
     const upstream = await fetch(upstreamUrl, {
       headers: {
@@ -155,7 +165,7 @@ async function geocodeLocation(request: Request) {
     });
     if (!upstream.ok) return json(request, { error: "지역 검색 서비스가 일시적으로 응답하지 않습니다." }, 502);
     const results = await upstream.json() as NominatimResult[];
-    const result = results[0];
+    const result = results.find(isAdministrativeResult) || results[0];
     const latitude = Number(result?.lat);
     const longitude = Number(result?.lon);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return json(request, { error: `“${query}” 위치를 찾지 못했습니다. 도시·구·동 이름을 조금 더 자세히 입력해 주세요.` }, 404);
@@ -167,6 +177,7 @@ async function geocodeLocation(request: Request) {
       name: String(result.display_name || query),
       shortName: String(address.neighbourhood || address.suburb || address.borough || address.city_district || address.city || address.town || address.village || result.name || query),
       countryCode: typeof address.country_code === "string" ? address.country_code.toUpperCase() : null,
+      bounds: isAdministrativeResult(result) ? locationBounds(result.boundingbox) : null,
       attribution: "© OpenStreetMap contributors",
     };
     geocodeCache.set(cacheKey, { expiresAt: Date.now() + 24 * 60 * 60 * 1_000, location });
@@ -202,6 +213,8 @@ async function nearbyTourism(request: Request) {
   const url = new URL(request.url);
   const latitude = Number(url.searchParams.get("lat"));
   const longitude = Number(url.searchParams.get("lon"));
+  const requestedRadius = Number(url.searchParams.get("radius"));
+  const radius = Number.isFinite(requestedRadius) ? Math.min(20_000, Math.max(1_600, Math.round(requestedRadius))) : 1_600;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return json(request, { error: "유효한 위치 정보가 필요합니다." }, 400);
   if (!process.env.KTO_SERVICE_KEY) return json(request, { error: "관광공사 API가 아직 설정되지 않았습니다." }, 503);
   const upstreamUrl = new URL("https://apis.data.go.kr/B551011/KorService2/locationBasedList2");
@@ -212,7 +225,7 @@ async function nearbyTourism(request: Request) {
     _type: "json",
     mapX: String(longitude),
     mapY: String(latitude),
-    radius: "1600",
+    radius: String(radius),
     contentTypeId: "39",
     arrange: "P",
     numOfRows: "20",

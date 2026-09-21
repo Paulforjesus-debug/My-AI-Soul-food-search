@@ -35,7 +35,7 @@
   async function signUp(email, password) { return authResult(client => client.signUp.email({ email, password, name: email.split('@')[0] || 'mise user' })); }
   async function submitPlace(payload) { return request('/place-submissions', { method: 'POST', body: JSON.stringify(payload) }); }
   async function signOut() { if (configured()) await authResult(client => client.signOut()); }
-  async function searchKto(latitude, longitude) { return apiConfigured() ? (await publicRequest(`/kto-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)).places || [] : []; }
+  async function searchKto(latitude, longitude, radius) { const radiusParam = Number.isFinite(Number(radius)) ? `&radius=${encodeURIComponent(Math.round(Number(radius)))}` : ''; return apiConfigured() ? (await publicRequest(`/kto-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}${radiusParam}`)).places || [] : []; }
   async function getKtoDetails(contentId) { return apiConfigured() ? (await publicRequest(`/kto-details?contentId=${encodeURIComponent(contentId)}`)).details || {} : {}; }
   async function getPlaceInsights(place) {
     if (!apiConfigured()) return {};
