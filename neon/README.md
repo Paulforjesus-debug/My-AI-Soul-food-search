@@ -18,8 +18,11 @@
 - `POST /api/auth/sign-out`
 - `POST /api/place-submissions`
 - `GET /api/kto-nearby?lat=&lon=`
+- `GET /api/place-insights?name=&address=&lat=&lon=`
 
 `place_submissions.owner_id`는 서버가 인증 세션에서 얻어 기록합니다. 브라우저가 보낸 소유자 ID를 신뢰하지 않습니다. 따라서 개인 등록 데이터는 다른 사용자에게 노출되지 않습니다.
+
+`place-insights`는 로그인 없이 읽을 수 있지만 요청 횟수 제한과 1시간 캐시를 적용합니다. `GOOGLE_MAPS_API_KEY`, `KAKAO_REST_API_KEY`, `YOUTUBE_API_KEY`는 Neon Function의 비밀 환경 변수로만 등록합니다. Google Places는 평점·텍스트 리뷰, Kakao Local은 카카오 장소 매칭, YouTube Data API는 관련 영상 리뷰를 담당합니다.
 
 ## GitHub 기반 배포
 

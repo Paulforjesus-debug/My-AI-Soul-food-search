@@ -21,7 +21,8 @@ export default function Home() {
   const [status, setStatus] = useState("위치 기반 추천 준비됨");
   const [selectedId, setSelectedId] = useState(places[0].id);
 
-  useEffect(() => { const stored = window.localStorage.getItem("mise-saved-places"); if (stored) setSaved(JSON.parse(stored)); }, []);
+  useEffect(() => { const stored = window.localStorage.getItem("mise-saved-places"); if (stored) { // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate client-only local storage after mount
+    setSaved(JSON.parse(stored)); } }, []);
   const results = useMemo(() => activeFilter === "비건" ? places.filter((place) => place.tags.includes("비건")) : activeFilter === "혼밥" ? places.filter((place) => place.tags.includes("혼밥 가능")) : places, [activeFilter]);
   function toggleSaved(id: string) { setSaved((current) => { const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id]; window.localStorage.setItem("mise-saved-places", JSON.stringify(next)); return next; }); }
   function useCurrentLocation() { if (!navigator.geolocation) { setStatus("이 브라우저에서는 위치 정보를 지원하지 않습니다."); return; } setStatus("현재 위치를 확인하는 중…"); navigator.geolocation.getCurrentPosition(({ coords }) => { setLocation(`현재 위치 · ${coords.latitude.toFixed(3)}, ${coords.longitude.toFixed(3)}`); setStatus("현재 위치를 반영했습니다. 실제 데이터 연결 후 주변 결과가 갱신됩니다."); }, () => setStatus("위치 권한이 필요합니다. 지역명을 직접 입력해도 됩니다."), { enableHighAccuracy: false, timeout: 7000 }); }

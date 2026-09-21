@@ -15,11 +15,22 @@ const allowedOrigins = new Set([
 ]);
 const visitorHits = new Map<string, number[]>();
 const geocodeCache = new Map<string, { expiresAt: number; location: Record<string, unknown> }>();
+const tourismDetailsCache = new Map<string, { expiresAt: number; details: Record<string, unknown> }>();
+const placeInsightsCache = new Map<string, { expiresAt: number; insights: Record<string, unknown> }>();
 let lastGeocodeRequestAt = 0;
 
 type PlaceInput = { name?: unknown; category?: unknown; country_code?: unknown; address?: unknown; latitude?: unknown; longitude?: unknown; website_url?: unknown; note?: unknown; broadcast_program?: unknown; broadcast_episode?: unknown; broadcast_aired_on?: unknown; broadcast_source_url?: unknown };
+type TourismApiResponse = { response?: { header?: { resultCode?: string }; body?: { items?: { item?: unknown } } } };
+type TourismApiItem = Record<string, unknown>;
+type NominatimResult = { lat?: string; lon?: string; display_name?: string; name?: string; address?: Record<string, unknown> };
+type GoogleReview = { rating?: number; text?: { text?: string }; relativePublishTimeDescription?: string; authorAttribution?: { displayName?: string; uri?: string }; googleMapsUri?: string };
+type GooglePlace = { id?: string; rating?: number; userRatingCount?: number; reviews?: GoogleReview[]; googleMapsLinks?: { placeUri?: string; reviewsUri?: string } };
+type GoogleTextSearchResponse = { places?: GooglePlace[] };
+type KakaoPlace = { id?: string; place_name?: string; place_url?: string; x?: string; y?: string };
+type KakaoSearchResponse = { documents?: KakaoPlace[] };
+type YouTubeSearchResponse = { items?: Array<{ id?: { videoId?: string }; snippet?: { title?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string } } } }> };
 
-function cors(request: Request) {
+function cors(request: Request): Record<string, string> {
   const origin = request.headers.get("origin");
   if (!origin || !allowedOrigins.has(origin)) return { Vary: "Origin" };
   return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Max-Age": "86400", Vary: "Origin" };
@@ -59,6 +70,27 @@ function validDate(value: string | null) {
 function serviceKeyForQuery(value: string) {
   try { return decodeURIComponent(value); } catch { return value; }
 }
+function plainText(value: unknown, max = 500) {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, " | ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+function menuList(...values: unknown[]) {
+  return [...new Set(values.flatMap((value) => plainText(value, 800).split(/\s*\|\s*|\r?\n/)).map((value) => value.trim()).filter(Boolean))].slice(0, 8);
+}
+function normalizedText(value: string) {
+  return value.toLocaleLowerCase("ko-KR").replace(/[^\p{L}\p{N}]/gu, "");
+}
+function coordinatesFromUrl(url: URL) {
+  const latitude = Number(url.searchParams.get("lat"));
+  const longitude = Number(url.searchParams.get("lon"));
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? { latitude, longitude } : null;
+}
 function nearbySearchAllowed(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for") || request.headers.get("cf-connecting-ip") || "unknown";
   const visitor = forwarded.split(",")[0].trim();
@@ -70,9 +102,10 @@ function nearbySearchAllowed(request: Request) {
   return true;
 }
 function tourismPlaces(items: unknown) {
-  const list = Array.isArray(items) ? items : items ? [items] : [];
-  return list.map((item: any, index) => ({
+  const list = (Array.isArray(items) ? items : items ? [items] : []).filter((item): item is TourismApiItem => Boolean(item) && typeof item === "object");
+  return list.map((item, index) => ({
     id: `kto-${String(item.contentid || index)}`,
+    contentId: item.contentid ? String(item.contentid) : null,
     name: String(item.title || "관광공사 등록 음식점"),
     cuisine: "관광 음식점",
     where: String(item.addr1 || item.addr2 || "대한민국"),
@@ -84,6 +117,9 @@ function tourismPlaces(items: unknown) {
     verified: item.modifiedtime ? `${String(item.modifiedtime).slice(0, 8)} 기준` : "방금 확인",
     desc: item.tel ? `전화 ${item.tel}` : "한국관광공사 관광 음식점 정보입니다.",
     tags: ["관광공사 등록", item.tel ? "전화 정보" : "상세 확인 필요"],
+    menus: [],
+    rating: null,
+    reviewCount: null,
     url: null,
     phone: item.tel ? String(item.tel).trim() : null,
     latitude: Number.isFinite(Number(item.mapy)) ? Number(item.mapy) : null,
@@ -118,7 +154,7 @@ async function geocodeLocation(request: Request) {
       signal: AbortSignal.timeout(10_000),
     });
     if (!upstream.ok) return json(request, { error: "지역 검색 서비스가 일시적으로 응답하지 않습니다." }, 502);
-    const results = await upstream.json() as any[];
+    const results = await upstream.json() as NominatimResult[];
     const result = results[0];
     const latitude = Number(result?.lat);
     const longitude = Number(result?.lon);
@@ -185,13 +221,162 @@ async function nearbyTourism(request: Request) {
   try {
     const upstream = await fetch(upstreamUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
     if (!upstream.ok) return json(request, { error: "관광공사 조회 서비스가 일시적으로 응답하지 않습니다." }, 502);
-    const payload = await upstream.json() as any;
+    const payload = await upstream.json() as TourismApiResponse;
     const header = payload?.response?.header;
     if (header?.resultCode && header.resultCode !== "0000") return json(request, { error: "관광공사 API 요청이 거절되었습니다.", code: header.resultCode }, 502);
     return json(request, { places: tourismPlaces(payload?.response?.body?.items?.item) });
   } catch {
     return json(request, { error: "관광공사 검색에 일시적으로 연결할 수 없습니다." }, 502);
   }
+}
+
+async function tourismDetails(request: Request) {
+  if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 확인해 주세요." }, 429);
+  const contentId = String(new URL(request.url).searchParams.get("contentId") || "").trim();
+  if (!/^\d{1,30}$/.test(contentId)) return json(request, { error: "유효한 관광공사 콘텐츠 ID가 필요합니다." }, 400);
+  if (!process.env.KTO_SERVICE_KEY) return json(request, { error: "관광공사 API가 아직 설정되지 않았습니다." }, 503);
+  const cached = tourismDetailsCache.get(contentId);
+  if (cached && cached.expiresAt > Date.now()) return json(request, { details: cached.details, cached: true });
+  const upstreamUrl = new URL("https://apis.data.go.kr/B551011/KorService2/detailIntro2");
+  upstreamUrl.search = new URLSearchParams({
+    serviceKey: serviceKeyForQuery(process.env.KTO_SERVICE_KEY),
+    MobileOS: "ETC",
+    MobileApp: "mise",
+    _type: "json",
+    contentId,
+    contentTypeId: "39",
+  }).toString();
+  try {
+    const upstream = await fetch(upstreamUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
+    if (!upstream.ok) return json(request, { error: "관광공사 상세 정보가 일시적으로 응답하지 않습니다." }, 502);
+    const payload = await upstream.json() as TourismApiResponse;
+    const header = payload?.response?.header;
+    if (header?.resultCode && header.resultCode !== "0000") return json(request, { error: "관광공사 상세 정보 요청이 거절되었습니다.", code: header.resultCode }, 502);
+    const raw = payload?.response?.body?.items?.item;
+    const item = Array.isArray(raw) ? raw[0] : raw;
+    const details = {
+      menus: menuList(item?.firstmenu, item?.treatmenu),
+      openingHours: plainText(item?.opentimefood, 300) || null,
+      restDays: plainText(item?.restdatefood, 200) || null,
+      detailsSource: "한국관광공사 TourAPI",
+    };
+    tourismDetailsCache.set(contentId, { expiresAt: Date.now() + 24 * 60 * 60 * 1_000, details });
+    return json(request, { details, cached: false });
+  } catch {
+    return json(request, { error: "관광공사 상세 정보에 일시적으로 연결할 수 없습니다." }, 502);
+  }
+}
+
+async function googlePlaceInsight(name: string, address: string, coordinates: { latitude: number; longitude: number } | null) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return { configured: false };
+  const searchBody: Record<string, unknown> = { textQuery: `${name} ${address}`.trim(), languageCode: "ko", regionCode: "KR", maxResultCount: 1 };
+  if (coordinates) searchBody.locationBias = { circle: { center: coordinates, radius: 3000 } };
+  const search = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": apiKey, "X-Goog-FieldMask": "places.id" },
+    body: JSON.stringify(searchBody),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!search.ok) throw new Error(`Google Places ${search.status}`);
+  const searchPayload = await search.json() as GoogleTextSearchResponse;
+  const placeId = searchPayload.places?.[0]?.id;
+  if (!placeId) return { configured: true, found: false };
+  const details = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    headers: {
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "rating,userRatingCount,reviews,googleMapsLinks.placeUri,googleMapsLinks.reviewsUri",
+    },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!details.ok) throw new Error(`Google Place Details ${details.status}`);
+  const place = await details.json() as GooglePlace;
+  return {
+    configured: true,
+    found: true,
+    rating: Number.isFinite(Number(place.rating)) ? Number(place.rating) : null,
+    reviewCount: Number.isFinite(Number(place.userRatingCount)) ? Number(place.userRatingCount) : null,
+    placeUrl: place.googleMapsLinks?.placeUri || null,
+    reviewsUrl: place.googleMapsLinks?.reviewsUri || null,
+    reviews: (place.reviews || []).slice(0, 3).map((review) => ({
+      rating: Number.isFinite(Number(review.rating)) ? Number(review.rating) : null,
+      text: String(review.text?.text || "").trim().slice(0, 500),
+      relativeTime: String(review.relativePublishTimeDescription || "").trim() || null,
+      author: String(review.authorAttribution?.displayName || "Google 사용자").trim(),
+      authorUrl: review.authorAttribution?.uri || null,
+      url: review.googleMapsUri || null,
+    })).filter((review) => review.text),
+  };
+}
+
+async function kakaoPlaceInsight(name: string, address: string) {
+  const apiKey = process.env.KAKAO_REST_API_KEY;
+  if (!apiKey) return { configured: false };
+  const upstreamUrl = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
+  upstreamUrl.search = new URLSearchParams({ query: `${name} ${address}`.trim(), size: "1" }).toString();
+  const response = await fetch(upstreamUrl, { headers: { Authorization: `KakaoAK ${apiKey}` }, signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) throw new Error(`Kakao Local ${response.status}`);
+  const payload = await response.json() as KakaoSearchResponse;
+  const place = payload.documents?.[0];
+  if (!place?.id) return { configured: true, found: false };
+  return {
+    configured: true,
+    found: true,
+    placeId: place.id,
+    name: place.place_name || name,
+    placeUrl: place.place_url || null,
+    latitude: Number.isFinite(Number(place.y)) ? Number(place.y) : null,
+    longitude: Number.isFinite(Number(place.x)) ? Number(place.x) : null,
+  };
+}
+
+async function youtubeReviewVideos(name: string, address: string) {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) return { configured: false, videos: [] };
+  const upstreamUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+  upstreamUrl.search = new URLSearchParams({ part: "snippet", type: "video", maxResults: "3", order: "relevance", q: `${name} ${address} 맛집 리뷰`, key: apiKey }).toString();
+  const response = await fetch(upstreamUrl, { signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) throw new Error(`YouTube Data API ${response.status}`);
+  const payload = await response.json() as YouTubeSearchResponse;
+  return {
+    configured: true,
+    videos: (payload.items || []).flatMap((item) => {
+      const videoId = item.id?.videoId;
+      if (!videoId) return [];
+      return [{
+        id: videoId,
+        title: String(item.snippet?.title || "YouTube 영상").trim(),
+        channel: String(item.snippet?.channelTitle || "YouTube").trim(),
+        publishedAt: item.snippet?.publishedAt || null,
+        thumbnail: item.snippet?.thumbnails?.medium?.url || null,
+        url: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+      }];
+    }),
+  };
+}
+
+async function placeInsights(request: Request) {
+  if (!nearbySearchAllowed(request)) return json(request, { error: "잠시 후 다시 확인해 주세요." }, 429);
+  const url = new URL(request.url);
+  const name = String(url.searchParams.get("name") || "").trim();
+  const address = String(url.searchParams.get("address") || "").trim();
+  if (name.length < 2 || name.length > 160 || address.length > 500) return json(request, { error: "업체 이름 또는 주소를 확인해 주세요." }, 400);
+  const cacheKey = `${normalizedText(name)}:${normalizedText(address)}`;
+  const cached = placeInsightsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return json(request, { insights: cached.insights, cached: true });
+  const coordinates = coordinatesFromUrl(url);
+  const [google, kakao, youtube] = await Promise.allSettled([
+    googlePlaceInsight(name, address, coordinates),
+    kakaoPlaceInsight(name, address),
+    youtubeReviewVideos(name, address),
+  ]);
+  const insight = {
+    google: google.status === "fulfilled" ? google.value : { configured: Boolean(process.env.GOOGLE_MAPS_API_KEY), available: false },
+    kakao: kakao.status === "fulfilled" ? kakao.value : { configured: Boolean(process.env.KAKAO_REST_API_KEY), available: false },
+    youtube: youtube.status === "fulfilled" ? youtube.value : { configured: Boolean(process.env.YOUTUBE_API_KEY), videos: [] },
+  };
+  placeInsightsCache.set(cacheKey, { expiresAt: Date.now() + 60 * 60 * 1_000, insights: insight });
+  return json(request, { insights: insight, cached: false });
 }
 
 async function nearbyRegional(request: Request) {
@@ -210,13 +395,15 @@ async function nearbyRegional(request: Request) {
   }
 }
 
-export default {
+const miseApi = {
   async fetch(request: Request): Promise<Response> {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
     const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
     if (request.method === "GET" && (path === "/" || path === "/health")) return json(request, { ok: true, service: "mise-api" });
     if (request.method === "GET" && path === "/geocode") return geocodeLocation(request);
     if (request.method === "GET" && path === "/kto-nearby") return nearbyTourism(request);
+    if (request.method === "GET" && path === "/kto-details") return tourismDetails(request);
+    if (request.method === "GET" && path === "/place-insights") return placeInsights(request);
     if (request.method === "GET" && path === "/regional-nearby") return nearbyRegional(request);
     const user = await identity(request);
     if (!user) return json(request, { error: "로그인이 필요하거나 로그인 상태가 만료되었습니다." }, 401);
@@ -254,3 +441,5 @@ export default {
     return json(request, { error: "요청한 경로를 찾을 수 없습니다." }, 404);
   },
 };
+
+export default miseApi;

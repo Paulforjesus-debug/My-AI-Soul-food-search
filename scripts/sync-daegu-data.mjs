@@ -15,6 +15,19 @@ function plainText(value, max = 500) {
     .slice(0, max);
 }
 
+function menuList(value) {
+  return [...new Set(
+    String(value || "")
+      .replace(/<br\s*\/?>/gi, "|")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .split(/\s*\|\s*|\r?\n/)
+      .map((menu) => menu.replace(/\s+/g, " ").trim())
+      .filter(Boolean),
+  )].slice(0, 8);
+}
+
 function normalize(item, district, index) {
   const reservation = String(item.BKN_YN || "").includes("가능");
   const website = String(item.HP || "").trim();
@@ -32,6 +45,10 @@ function normalize(item, district, index) {
     verified: "공식 자료 동기화",
     desc: plainText(item.SMPL_DESC, 360) || plainText(item.MNU, 360) || "대구광역시 공식 맛집 정보입니다.",
     tags: [plainText(item.FD_CS, 40) || "음식점", reservation ? "예약 가능" : null, item.MBZ_HR ? "영업시간 제공" : null].filter(Boolean),
+    menus: menuList(item.MNU),
+    rating: null,
+    reviewCount: null,
+    openingHours: plainText(item.MBZ_HR, 240) || null,
     url: /^https?:\/\//i.test(website) ? website : null,
     phone: plainText(item.TLNO, 40) || null,
     latitude: null,

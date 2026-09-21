@@ -36,6 +36,13 @@
   async function submitPlace(payload) { return request('/place-submissions', { method: 'POST', body: JSON.stringify(payload) }); }
   async function signOut() { if (configured()) await authResult(client => client.signOut()); }
   async function searchKto(latitude, longitude) { return apiConfigured() ? (await publicRequest(`/kto-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)).places || [] : []; }
+  async function getKtoDetails(contentId) { return apiConfigured() ? (await publicRequest(`/kto-details?contentId=${encodeURIComponent(contentId)}`)).details || {} : {}; }
+  async function getPlaceInsights(place) {
+    if (!apiConfigured()) return {};
+    const params = new URLSearchParams({ name: String(place?.name || ''), address: String(place?.where || '') });
+    if (Number.isFinite(Number(place?.latitude)) && Number.isFinite(Number(place?.longitude))) { params.set('lat', String(place.latitude)); params.set('lon', String(place.longitude)); }
+    return (await publicRequest(`/place-insights?${params.toString()}`)).insights || {};
+  }
   async function geocode(query) {
     if (!apiConfigured()) throw new Error('지역 검색 서버가 아직 연결되지 않았습니다.');
     return (await publicRequest(`/geocode?q=${encodeURIComponent(query)}`)).location;
@@ -65,5 +72,5 @@
     try { const snapshot = await staticDaegu(latitude, longitude); if (snapshot) return snapshot; } catch {}
     try { return apiConfigured() ? await publicRequest(`/regional-nearby?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`) : { places: [], providers: [] }; } catch { return { places: [], providers: [] }; }
   }
-  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, geocode, searchKto, searchRegional, signOut };
+  window.MiseNeon = { configured, getSession, signIn, signUp, submitPlace, geocode, searchKto, getKtoDetails, getPlaceInsights, searchRegional, signOut };
 })();
