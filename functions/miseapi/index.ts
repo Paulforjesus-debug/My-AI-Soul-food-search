@@ -14,6 +14,7 @@ const allowedOrigins = new Set([
   ...(process.env.PUBLIC_APP_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean),
 ]);
 const visitorHits = new Map<string, number[]>();
+const deviceRegistrationHits = new Map<string, number[]>();
 const geocodeCache = new Map<string, { expiresAt: number; location: Record<string, unknown> }>();
 const tourismDetailsCache = new Map<string, { expiresAt: number; details: Record<string, unknown> }>();
 const placeInsightsCache = new Map<string, { expiresAt: number; insights: Record<string, unknown> }>();
@@ -33,7 +34,7 @@ type YouTubeSearchResponse = { items?: Array<{ id?: { videoId?: string }; snippe
 function cors(request: Request): Record<string, string> {
   const origin = request.headers.get("origin");
   if (!origin || !allowedOrigins.has(origin)) return { Vary: "Origin" };
-  return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Max-Age": "86400", Vary: "Origin" };
+  return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Mise-Device-Id", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Max-Age": "86400", Vary: "Origin" };
 }
 function json(request: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...cors(request) } });
@@ -57,6 +58,18 @@ async function identity(request: Request) {
     if (typeof payload.sub !== "string") return null;
     return { id: payload.sub, email: typeof payload.email === "string" ? payload.email : null };
   } catch { return null; }
+}
+function deviceIdentity(request: Request) {
+  const deviceId = request.headers.get("x-mise-device-id") || "";
+  return /^[a-f0-9]{32}$/.test(deviceId) ? { id: `device:${deviceId}`, email: null } : null;
+}
+function deviceRegistrationAllowed(ownerId: string) {
+  const now = Date.now();
+  const recent = (deviceRegistrationHits.get(ownerId) || []).filter((at) => now - at < 3_600_000);
+  if (recent.length >= 20) return false;
+  recent.push(now);
+  deviceRegistrationHits.set(ownerId, recent);
+  return true;
 }
 function validWebsite(url: string | null) {
   if (!url) return true;
@@ -418,14 +431,15 @@ const miseApi = {
     if (request.method === "GET" && path === "/kto-details") return tourismDetails(request);
     if (request.method === "GET" && path === "/place-insights") return placeInsights(request);
     if (request.method === "GET" && path === "/regional-nearby") return nearbyRegional(request);
-    const user = await identity(request);
-    if (!user) return json(request, { error: "로그인이 필요하거나 로그인 상태가 만료되었습니다." }, 401);
+    const user = await identity(request) || deviceIdentity(request);
+    if (!user) return json(request, { error: "이 기기의 등록 정보를 확인할 수 없습니다. 브라우저 저장 공간을 허용한 뒤 다시 시도해 주세요." }, 401);
     if (request.method === "GET" && path === "/session") return json(request, { session: { user } });
     if (request.method === "GET" && path === "/place-submissions") {
       const { rows } = await pool.query("select id, name, category, country_code, address, latitude, longitude, website_url, note, broadcast_program, broadcast_episode, broadcast_aired_on, broadcast_source_url, status, created_at from place_submissions where owner_id = $1 order by created_at desc limit 100", [user.id]);
       return json(request, { submissions: rows });
     }
     if (request.method === "POST" && path === "/place-submissions") {
+      if (user.id.startsWith("device:") && !deviceRegistrationAllowed(user.id)) return json(request, { error: "이 기기에서는 한 시간에 20곳까지 등록할 수 있습니다." }, 429);
       let input: PlaceInput;
       try { input = await request.json() as PlaceInput; } catch { return json(request, { error: "JSON 형식의 등록 정보를 보내 주세요." }, 400); }
       const name = stringValue(input.name, 160);

@@ -5,7 +5,15 @@
   let authClientPromise;
 
   function apiConfigured() { return Boolean(apiBase); }
-  function configured() { return Boolean(apiBase && authUrl); }
+  function configured() { return apiConfigured(); }
+  function deviceId() {
+    const key = 'mise-device-id';
+    let value = localStorage.getItem(key);
+    if (/^[a-f0-9]{32}$/.test(value || '')) return value;
+    value = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID().replace(/-/g, '') : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    localStorage.setItem(key, value);
+    return value;
+  }
   async function authClient() {
     if (!configured()) throw new Error('개인 등록 서비스를 아직 연결하지 않았습니다.');
     if (!authClientPromise) authClientPromise = import('https://esm.sh/@neondatabase/auth@latest').then(({ createAuthClient }) => createAuthClient(authUrl));
@@ -17,9 +25,9 @@
     return result?.data;
   }
   async function request(path, options = {}) {
-    const tokenData = await authResult(client => client.token());
-    if (!tokenData?.token) throw new Error('로그인 상태가 만료되었습니다. 다시 로그인해 주세요.');
-    const response = await fetch(`${apiBase}${path}`, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenData.token}`, ...(options.headers || {}) }, ...options });
+    let authorization = {};
+    if (authUrl) { try { const tokenData = await authResult(client => client.token()); if (tokenData?.token) authorization = { Authorization: `Bearer ${tokenData.token}` }; } catch {} }
+    const response = await fetch(`${apiBase}${path}`, { headers: { 'Content-Type': 'application/json', 'X-Mise-Device-Id': deviceId(), ...authorization, ...(options.headers || {}) }, ...options });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || '등록 서비스에 연결하지 못했습니다.');
     return payload;
