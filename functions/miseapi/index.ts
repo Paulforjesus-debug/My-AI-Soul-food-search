@@ -460,7 +460,6 @@ const miseApi = {
       if (latitude === undefined || longitude === undefined || (latitude !== null && (latitude < -90 || latitude > 90)) || (longitude !== null && (longitude < -180 || longitude > 180))) return json(request, { error: "좌표 값을 확인해 주세요." }, 400);
       if (!validWebsite(websiteUrl)) return json(request, { error: "웹사이트는 http 또는 https 주소여야 합니다." }, 400);
       if ((broadcastEpisode || broadcastAiredOn || broadcastSourceUrl) && !broadcastProgram) return json(request, { error: "방송 출연 정보를 넣을 때는 프로그램명을 입력해 주세요." }, 400);
-      if (broadcastProgram && !broadcastSourceUrl) return json(request, { error: "방송 출연 정보에는 공식 방송 또는 공식 영상 링크가 필요합니다." }, 400);
       if (!validDate(broadcastAiredOn)) return json(request, { error: "방송일은 YYYY-MM-DD 형식으로 입력해 주세요." }, 400);
       if (!validWebsite(broadcastSourceUrl)) return json(request, { error: "공식 방송 링크는 http 또는 https 주소여야 합니다." }, 400);
       const { rows } = await pool.query(`insert into place_submissions (owner_id, name, category, country_code, address, latitude, longitude, website_url, note, broadcast_program, broadcast_episode, broadcast_aired_on, broadcast_source_url, status) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'approved') returning id, status, created_at`, [user.id, name, category, countryCode, address, latitude, longitude, websiteUrl, note, broadcastProgram, broadcastEpisode, broadcastAiredOn, broadcastSourceUrl]);
